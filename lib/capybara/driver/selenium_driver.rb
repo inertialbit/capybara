@@ -74,7 +74,6 @@ class Capybara::Driver::Selenium < Capybara::Driver::Base
     end
     
     def trigger(event)
-      node.fire_event(event.to_s)
     end
 
   private
