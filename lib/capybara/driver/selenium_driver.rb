@@ -1,16 +1,16 @@
 require 'selenium-webdriver'
 
 class Capybara::Driver::Selenium < Capybara::Driver::Base
-  class Node < Capybara::Node
+  class Node < Capybara::Driver::Node
     def text
-      node.text
+      native.text
     end
 
     def [](name)
       if name == :value
-        node.value
+        native.value
       else
-        node.attribute(name)
+        native.attribute(name.to_s)
       end
     rescue Selenium::WebDriver::Error::WebDriverError
       nil
@@ -18,68 +18,59 @@ class Capybara::Driver::Selenium < Capybara::Driver::Base
 
     def value
       if tag_name == "select" and self[:multiple]
-        node.find_elements(:xpath, ".//option").select { |n| n.selected? }.map { |n| n.text }
+        native.find_elements(:xpath, ".//option").select { |n| n.selected? }.map { |n| n.text }
       else
-        super
+        self[:value]
       end
     end
 
     def set(value)
-      if tag_name == 'textarea' or (tag_name == 'input' and %w(text password hidden file).include?(type))
-        node.clear
-        node.send_keys(value.to_s)
-      elsif tag_name == 'input' and type == 'radio'
-        node.click
+      if tag_name == 'input' and type == 'radio'
+        native.click
       elsif tag_name == 'input' and type == 'checkbox'
-        node.click if node.attribute('checked') != value
+        native.click if native.attribute('checked') != value
+      elsif tag_name == 'textarea' or tag_name == 'input'
+        native.clear
+        native.send_keys(value.to_s)
       end
     end
 
-    def select(option)
-      option_node = node.find_element(:xpath, ".//option[text()=#{Capybara::XPath.escape(option)}]") || node.find_element(:xpath, ".//option[contains(.,#{Capybara::XPath.escape(option)})]")
-      option_node.select
-    rescue 
-      options = node.find_elements(:xpath, "//option").map { |o| "'#{o.text}'" }.join(', ')
-      raise Capybara::OptionNotFound, "No such option '#{option}' in this select box. Available options: #{options}"
+    def select_option
+      native.select
     end
 
-    def unselect(option)
-      if node['multiple'] != 'multiple'
-        raise Capybara::UnselectNotAllowed, "Cannot unselect option '#{option}' from single select box."
+    def unselect_option
+      if select_node['multiple'] != 'multiple'
+        raise Capybara::UnselectNotAllowed, "Cannot unselect option from single select box."
       end
-
-      begin
-        option_node = node.find_element(:xpath, ".//option[text()=#{Capybara::XPath.escape(option)}]") || node.find_element(:xpath, ".//option[contains(.,#{Capybara::XPath.escape(option)})]")
-        option_node.clear
-      rescue
-        options = node.find_elements(:xpath, "//option").map { |o| "'#{o.text}'" }.join(', ')
-        raise Capybara::OptionNotFound, "No such option '#{option}' in this select box. Available options: #{options}"
-      end
+      native.clear
     end
 
     def click
-      node.click
+      native.click
     end
 
     def drag_to(element)
-      node.drag_and_drop_on(element.node)
+      native.drag_and_drop_on(element.native)
     end
 
     def tag_name
-      node.tag_name
+      native.tag_name
     end
 
     def visible?
-      node.displayed? and node.displayed? != "false"
+      native.displayed? and native.displayed? != "false"
     end
     
-    def trigger(event)
+    def find(locator)
+      native.find_elements(:xpath, locator).map { |n| self.class.new(driver, n) }
     end
 
   private
 
-    def all_unfiltered(locator)
-      node.find_elements(:xpath, locator).map { |n| self.class.new(driver, n) }
+    # a reference to the select node if this is an option node
+    def select_node
+      find('./ancestor::select').first
     end
 
     def type
@@ -128,6 +119,10 @@ class Capybara::Driver::Selenium < Capybara::Driver::Base
 
   def wait?; true; end
 
+  def execute_script(script)
+    browser.execute_script script
+  end
+
   def evaluate_script(script)
     browser.execute_script "return #{script}"
   end
@@ -138,6 +133,13 @@ class Capybara::Driver::Selenium < Capybara::Driver::Base
 
   def cleanup!
     browser.manage.delete_all_cookies
+  end
+
+  def within_frame(frame_id)
+    old_window = browser.window_handle
+    browser.switch_to.frame(frame_id)
+    yield
+    browser.switch_to.window old_window
   end
 
 private

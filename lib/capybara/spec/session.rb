@@ -1,9 +1,7 @@
 require 'capybara/spec/test_app'
 require 'nokogiri'
 
-Dir[File.dirname(__FILE__)+'/session/*'].each { |group| 
-  require group
-}
+Dir[File.dirname(__FILE__)+'/session/*'].each { |group| require group }
 
 shared_examples_for "session" do
   def extract_results(session)
@@ -43,7 +41,7 @@ shared_examples_for "session" do
   it_should_behave_like "attach_file"
   it_should_behave_like "check"
   it_should_behave_like "choose"
-  it_should_behave_like "click"
+  it_should_behave_like "click_link_or_button"
   it_should_behave_like "click_button"
   it_should_behave_like "click_link"
   it_should_behave_like "fill_in"
@@ -64,7 +62,6 @@ shared_examples_for "session" do
   it_should_behave_like "select"
   it_should_behave_like "uncheck"
   it_should_behave_like "unselect"
-  it_should_behave_like "locate"
   it_should_behave_like "within"
   it_should_behave_like "current_url"
 end

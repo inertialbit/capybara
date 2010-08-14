@@ -11,6 +11,16 @@
     </select>
   </p>
 
+
+  <p>
+    <label for="form_other_title">Other title</label>
+    <select name="form[other_title]" id="form_other_title">
+      <option>Mrs</option>
+      <option>Mr</option>
+      <option>Miss</option>
+    </select>
+  </p>
+
   <p>
     <label for="form_first_name">
       First Name
@@ -46,7 +56,7 @@
 
   <p>
     <label for="form_phone">Phone</label>
-    <input type="text" name="form[phone]" value="+1 555 7021" id="form_phone"/>
+    <input name="form[phone]" value="+1 555 7021" id="form_phone"/>
   </p>
 
   <p>
@@ -77,6 +87,7 @@
       <option value="fi">Finish</option>
       <option value="no">Norwegian</option>
       <option value="jo">John's made-up language</option>
+      <option value="jbo"> Lojban </option>
     </select>
   </p>
 
@@ -164,7 +175,7 @@
   </p>
 </form>
 
-<form action="/form/get?foo=bar" method="get">
+<form id="get-form" action="/form/get?foo=bar" method="get">
   <p>
     <label for="form_middle_name">Middle Name</label>
     <input type="text" name="form[middle_name]" value="Darren" id="form_middle_name"/>

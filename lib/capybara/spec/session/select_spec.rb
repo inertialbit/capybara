@@ -37,6 +37,20 @@ shared_examples_for "select" do
       extract_results(@session)['locale'].should == 'jo'
     end
 
+    it "should obey from" do
+      @session.select("Miss", :from => "Other title")
+      @session.click_button('awesome')
+      results = extract_results(@session)
+      results['other_title'].should == "Miss"
+      results['title'].should_not == "Miss"
+    end
+
+    it "show match labels with preceding or trailing whitespace" do
+      @session.select("Lojban", :from => 'Locale')
+      @session.click_button('awesome')
+      extract_results(@session)['locale'].should == 'jbo'
+    end
+
     context "with a locator that doesn't exist" do
       it "should raise an error" do
         running { @session.select('foo', :from => 'does not exist') }.should raise_error(Capybara::ElementNotFound)
@@ -45,7 +59,7 @@ shared_examples_for "select" do
 
     context "with an option that doesn't exist" do
       it "should raise an error" do
-        running { @session.select('Does not Exist', :from => 'form_locale') }.should raise_error(Capybara::OptionNotFound)
+        running { @session.select('Does not Exist', :from => 'form_locale') }.should raise_error(Capybara::ElementNotFound)
       end
     end
 

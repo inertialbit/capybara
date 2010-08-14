@@ -2,6 +2,8 @@ $:.unshift(File.expand_path('../lib', File.dirname(__FILE__)))
 $:.unshift(File.dirname(__FILE__))
 
 require 'rubygems'
+require "bundler/setup"
+
 require 'spec'
 require 'spec/autorun'
 require 'capybara'
@@ -13,7 +15,9 @@ alias :running :lambda
 Capybara.default_wait_time = 0 # less timeout so tests run faster
 
 Spec::Runner.configure do |config|
-  config.after do
-    Capybara.default_selector = :xpath
+  config.before do
+    Capybara.configure do |config|
+      config.default_selector = :xpath
+    end
   end
 end

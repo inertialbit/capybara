@@ -4,7 +4,6 @@ require 'capybara/dsl'
 Capybara.app = Rack::Builder.new do
   map "/" do
     if Rails.version.to_f >= 3.0
-      ActionDispatch::Static
       run Rails.application  
     else # Rails 2
       use Rails::Rack::Static
@@ -14,4 +13,5 @@ Capybara.app = Rack::Builder.new do
 end.to_app
 
 Capybara.asset_root = Rails.root.join('public')
+Capybara.save_and_open_page_path = Rails.root.join('tmp/capybara')
 

@@ -1,18 +1,38 @@
-require 'forwardable'
-require 'capybara/wait_until'
+require 'capybara/util/timeout'
 
 module Capybara
-  class Session
-    extend Forwardable
-    include Searchable
 
+  ##
+  #
+  # The Session class represents a single user's interaction with the system. The Session can use
+  # any of the underlying drivers. A session can be initialized manually like this:
+  #
+  #     session = Capybara::Session.new(:culerity, MyRackApp)
+  #
+  # The application given as the second argument is optional. When running Capybara against an external
+  # page, you might want to leave it out:
+  #
+  #     session = Capybara::Session.new(:culerity)
+  #     session.visit('http://www.google.com')
+  #
+  # Session provides a number of methods for controlling the navigation of the page, such as +visit+,
+  # +current_path, and so on. It also delegate a number of methods to a Capybara::Document, representing
+  # the current HTML document. This allows interaction:
+  #
+  #     session.fill_in('q', :with => 'Capybara')
+  #     session.click_button('Search')
+  #     session.should have_content('Capybara')
+  #
+  # When using capybara/dsl, the Session is initialized automatically for you.
+  #
+  class Session
     DSL_METHODS = [
-      :all, :attach_file, :body, :check, :choose, :click, :click_button, :click_link, :current_url, :drag, :evaluate_script,
+      :all, :attach_file, :body, :check, :choose, :click_link_or_button, :click_button, :click_link, :current_url, :drag, :evaluate_script,
       :field_labeled, :fill_in, :find, :find_button, :find_by_id, :find_field, :find_link, :has_content?, :has_css?,
       :has_no_content?, :has_no_css?, :has_no_xpath?, :has_xpath?, :locate, :save_and_open_page, :select, :source, :uncheck,
-      :visit, :wait_until, :within, :within_fieldset, :within_table, :has_link?, :has_no_link?, :has_button?, :has_no_button?,
-      :has_field?, :has_no_field?, :has_checked_field?, :has_unchecked_field?, :has_no_table?, :has_table?, :unselect,
-      :has_select?, :has_no_select?
+      :visit, :wait_until, :within, :within_fieldset, :within_table, :within_frame, :has_link?, :has_no_link?, :has_button?,
+      :has_no_button?, :has_field?, :has_no_field?, :has_checked_field?, :has_unchecked_field?, :has_no_table?, :has_table?,
+      :unselect, :has_select?, :has_no_select?, :current_path, :scope_to, :click
     ]
 
     attr_reader :mode, :app
@@ -32,224 +52,227 @@ module Capybara
       end
     end
 
-    def_delegator :driver, :cleanup!
-    def_delegator :driver, :current_url
-    def_delegator :driver, :response_headers
-    def_delegator :driver, :visit
-    def_delegator :driver, :body
-    def_delegator :driver, :source
-
-    def click(locator)
-      msg = "no link or button '#{locator}' found"
-      locate(:xpath, XPath.link(locator).button(locator), msg).click
+    ##
+    #
+    # Reset the session, removing all cookies.
+    #
+    def cleanup!
+      driver.cleanup!
     end
 
-    def click_link(locator)
-      msg = "no link with title, id or text '#{locator}' found"
-      locate(:xpath, XPath.link(locator), msg).click
+    ##
+    #
+    # Returns a hash of response headers. Not supported by all drivers (e.g. Selenium)
+    #
+    # @return [Hash{String => String}] A hash of response headers.
+    #
+    def response_headers
+      driver.response_headers
     end
 
-    def click_button(locator)
-      msg = "no button with value or id or text '#{locator}' found"
-      locate(:xpath, XPath.button(locator), msg).click
+    ##
+    #
+    # Returns the current HTTP status code as an Integer. Not supported by all drivers (e.g. Selenium)
+    #
+    # @return [Integer] Current HTTP status code
+    #
+    def status_code
+      driver.status_code
     end
 
-    def drag(source_locator, target_locator)
-      source = locate(:xpath, source_locator, "drag source '#{source_locator}' not found on page")
-      target = locate(:xpath, target_locator, "drag target '#{target_locator}' not found on page")
-      source.drag_to(target)
+    ##
+    #
+    # @return [String] A snapshot of the HTML of the current document, as it looks right now
+    #
+    def body
+      driver.body
     end
 
-    def fill_in(locator, options={})
-      msg = "cannot fill in, no text field, text area or password field with id, name, or label '#{locator}' found"
-      locate(:xpath, XPath.fillable_field(locator), msg).set(options[:with])
+    ##
+    #
+    # @return [String] HTML source of the document, before being modified by JavaScript.
+    #
+    def source
+      driver.source
     end
 
-    def choose(locator)
-      msg = "cannot choose field, no radio button with id, name, or label '#{locator}' found"
-      locate(:xpath, XPath.radio_button(locator), msg).set(true)
+    ##
+    #
+    # @return [String] Path of the current page, without any domain information
+    #
+    def current_path
+      URI.parse(current_url).path
     end
 
-    def check(locator)
-      msg = "cannot check field, no checkbox with id, name, or label '#{locator}' found"
-      locate(:xpath, XPath.checkbox(locator), msg).set(true)
+    ##
+    #
+    # @return [String] Fully qualified URL of the current page
+    #
+    def current_url
+      driver.current_url
     end
 
-    def uncheck(locator)
-      msg = "cannot uncheck field, no checkbox with id, name, or label '#{locator}' found"
-      locate(:xpath, XPath.checkbox(locator), msg).set(false)
+    ##
+    #
+    # Navigate to the given URL. The URL can either be a relative URL or an absolute URL
+    # The behaviour of either depends on the driver.
+    #
+    #     session.visit('/foo')
+    #     session.visit('http://google.com')
+    #
+    # For drivers which can run against an external application, such as culerity and selenium
+    # giving an absolute URL will navigate to that page. This allows testing applications
+    # running on remote servers. For these drivers, setting Capybara.app_host will make the
+    # remote server the default. For example:
+    #
+    #     Capybara.app_host = 'http://google.com'
+    #     session.visit('/') # visits the google homepage
+    #
+    # @param [String] url     The URL to navigate to
+    #
+    def visit(url)
+      driver.visit(url)
     end
 
-    def select(value, options={})
-      msg = "cannot select option, no select box with id, name, or label '#{options[:from]}' found"
-      locate(:xpath, XPath.select(options[:from]), msg).select(value)
-    end
-
-    def unselect(value, options={})
-      msg = "cannot unselect option, no select box with id, name, or label '#{options[:from]}' found"
-      locate(:xpath, XPath.select(options[:from]), msg).unselect(value)
-    end
-
-    def attach_file(locator, path)
-      msg = "cannot attach file, no file field with id, name, or label '#{locator}' found"
-      locate(:xpath, XPath.file_field(locator), msg).set(path)
-    end
-
-    def within(kind, scope=nil)
-      kind, scope = Capybara.default_selector, kind unless scope
-      scope = XPath.from_css(scope) if kind == :css
-      locate(:xpath, scope, "scope '#{scope}' not found on page")
+    ##
+    #
+    # Execute the given block for a particular scope on the page. Within will find the first
+    # element matching the given selector and execute the block scoped to that element:
+    #
+    #     within(:xpath, '//div[@id="delivery-address"]') do
+    #       fill_in('Street', :with => '12 Main Street')
+    #     end
+    #
+    # It is possible to omit the first parameter, in that case, the selector is assumed to be
+    # of the type set in Capybara.default_selector.
+    #
+    #     within('div#delivery-address') do
+    #       fill_in('Street', :with => '12 Main Street')
+    #     end
+    #
+    # @param [:css, :xpath, String] kind    The type of selector or the selector if the second argument is blank
+    # @param [String] selector              The selector within which to execute the given block
+    #
+    def within(kind, selector=nil)
+      new_scope = find(kind, selector, :message => "scope '#{selector || kind}' not found on page")
       begin
-        scopes.push(scope)
+        scopes.push(new_scope)
         yield
       ensure
         scopes.pop
       end
     end
 
+    ##
+    #
+    # Execute the given block within the a specific fieldset given the id or legend of that fieldset.
+    #
+    # @param [String] locator    Id or legend of the fieldset
+    #
     def within_fieldset(locator)
       within :xpath, XPath.fieldset(locator) do
         yield
       end
     end
 
+    ##
+    #
+    # Execute the given block within the a specific table given the id or caption of that table.
+    #
+    # @param [String] locator    Id or caption of the table
+    #
     def within_table(locator)
       within :xpath, XPath.table(locator) do
         yield
       end
     end
 
-    def has_xpath?(path, options={})
-      wait_conditionally_until do
-        results = all(:xpath, path, options)
-
-        if options[:count]
-          results.size == options[:count]
-        else
-          results.size > 0
-        end
+    ##
+    #
+    # Execute the given block within the given iframe given the id of that iframe. Only works on
+    # some drivers (e.g. Selenium)
+    #
+    # @param [String] locator    Id of the frame
+    #
+    def within_frame(frame_id)
+      driver.within_frame(frame_id) do
+        yield
       end
-    rescue Capybara::TimeoutError
-      return false
     end
 
-    def has_no_xpath?(path, options={})
-      wait_conditionally_until do
-        results = all(:xpath, path, options)
-
-        if options[:count]
-          results.size != options[:count]
-        else
-          results.empty?
-        end
-      end
-    rescue Capybara::TimeoutError
-      return false
-    end
-
-    def has_css?(path, options={})
-      has_xpath?(XPath.from_css(path), options)
-    end
-
-    def has_no_css?(path, options={})
-      has_no_xpath?(XPath.from_css(path), options)
-    end
-
-    def has_content?(content)
-      has_xpath?(XPath.content(content))
-    end
-
-    def has_no_content?(content)
-      has_no_xpath?(XPath.content(content))
-    end
-
-    def has_link?(locator)
-      has_xpath?(XPath.link(locator))
-    end
-
-    def has_no_link?(locator)
-      has_no_xpath?(XPath.link(locator))
-    end
-
-    def has_button?(locator)
-      has_xpath?(XPath.button(locator))
-    end
-
-    def has_no_button?(locator)
-      has_no_xpath?(XPath.button(locator))
-    end
-
-    def has_field?(locator, options={})
-      has_xpath?(XPath.field(locator, options))
-    end
-
-    def has_no_field?(locator, options={})
-      has_no_xpath?(XPath.field(locator, options))
-    end
-
-    def has_checked_field?(locator)
-      has_xpath?(XPath.field(locator, :checked => true))
-    end
-
-    def has_unchecked_field?(locator)
-      has_xpath?(XPath.field(locator, :unchecked => true))
-    end
-
-    def has_select?(locator, options={})
-      has_xpath?(XPath.select(locator, options))
-    end
-
-    def has_no_select?(locator, options={})
-      has_no_xpath?(XPath.select(locator, options))
-    end
-
-    def has_table?(locator, options={})
-      has_xpath?(XPath.table(locator, options))
-    end
-
-    def has_no_table?(locator, options={})
-      has_no_xpath?(XPath.table(locator, options))
-    end
-
-    def save_and_open_page
-      require 'capybara/save_and_open_page'
-      Capybara::SaveAndOpenPage.save_and_open_page(body)
-    end
-
-    #return node identified by locator or raise ElementNotFound(using desc)
-    def locate(kind_or_locator, locator=nil, fail_msg = nil)
-      node = wait_conditionally_until { find(kind_or_locator, locator) }
-    ensure
-      raise Capybara::ElementNotFound, fail_msg || "Unable to locate '#{kind_or_locator}'" unless node
-      return node
-    end
-
+    ##
+    #
+    # Retry executing the block until a truthy result is returned or the timeout time is exceeded
+    #
+    # @param [Integer] timeout   The amount of seconds to retry executing the given block
+    #
     def wait_until(timeout = Capybara.default_wait_time)
-      WaitUntil.timeout(timeout,driver) { yield }
+      Capybara.timeout(timeout,driver) { yield }
     end
 
+    ##
+    #
+    # Execute the given script, not returning a result. This is useful for scripts that return
+    # complex objects, such as jQuery statements. +execute_script+ should always be used over
+    # +evaluate_script+ whenever possible.
+    #
+    # @param [String] script   A string of JavaScript to execute
+    #
+    def execute_script(script)
+      driver.execute_script(script)
+    end
+
+    ##
+    #
+    # Evaluate the given JavaScript and return the result. Be careful when using this with
+    # scripts that return complex objects, such as jQuery statements. +execute_script+ might
+    # be a better alternative.
+    #
+    # @param  [String] script   A string of JavaScript to evaluate
+    # @return [Object]          The result of the evaluated JavaScript (may be driver specific)
+    #
     def evaluate_script(script)
       driver.evaluate_script(script)
     end
 
+    ##
+    #
+    # @deprecated click is deprecated, please use {Capybara::Node::Actions#click_link_or_button} instead
+    #
+    def click(locator)
+      warn "DEPRECATED: click is deprecated, use click_link_or_button instead"
+      current_node.click_link_or_button(locator)
+    end
+
+    ##
+    #
+    # Save a snapshot of the page and open it in a browser for inspection
+    #
+    def save_and_open_page
+      require 'capybara/util/save_and_open_page'
+      Capybara.save_and_open_page(body)
+    end
+
+    def document
+      Capybara::Document.new(self, driver)
+    end
+
+    def method_missing(*args)
+      current_node.send(*args)
+    end
+
+    def respond_to?(method)
+      super || current_node.respond_to?(method)
+    end
+
   private
 
-    def wait_conditionally_until
-      if driver.wait? then wait_until { yield } else yield end
-    end
-
-    def all_unfiltered(locator)
-      XPath.wrap(locator).scope(current_scope).paths.map do |path|
-        driver.find(path)
-      end.flatten
-    end
-
-    def current_scope
-      scopes.join('')
+    def current_node
+      scopes.last
     end
 
     def scopes
-      @scopes ||= []
+      @scopes ||= [document]
     end
   end
 end

@@ -4,72 +4,65 @@ require 'nokogiri'
 require 'cgi'
 
 class Capybara::Driver::RackTest < Capybara::Driver::Base
-  class Node < Capybara::Node
+  class Node < Capybara::Driver::Node
     def text
-      node.text
+      native.text
     end
 
     def [](name)
       attr_name = name.to_s
       case
       when 'select' == tag_name && 'value' == attr_name
-        if node['multiple'] == 'multiple'
-          node.xpath(".//option[@selected='selected']").map { |option| option.content  }
+        if native['multiple'] == 'multiple'
+          native.xpath(".//option[@selected='selected']").map { |option| option.content  }
         else
-          option = node.xpath(".//option[@selected='selected']").first || node.xpath(".//option").first
+          option = native.xpath(".//option[@selected='selected']").first || native.xpath(".//option").first
           option.content if option
         end
       when 'input' == tag_name && 'checkbox' == type && 'checked' == attr_name
-        node[attr_name] == 'checked' ? true : false
+        native[attr_name] == 'checked' ? true : false
       else
-        node[attr_name]
+        native[attr_name]
       end
     end
 
+    def value
+      if tag_name == 'textarea'
+        native.content
+      else
+        self[:value]
+      end
+    end
 
     def set(value)
       if tag_name == 'input' and type == 'radio'
         driver.html.xpath("//input[@name=#{Capybara::XPath.escape(self[:name])}]").each { |node| node.remove_attribute("checked") }
-        node['checked'] = 'checked'
+        native['checked'] = 'checked'
       elsif tag_name == 'input' and type == 'checkbox'
-        if value && !node['checked']
-          node['checked'] = 'checked'
-        elsif !value && node['checked']
-          node.remove_attribute('checked')
+        if value && !native['checked']
+          native['checked'] = 'checked'
+        elsif !value && native['checked']
+          native.remove_attribute('checked')
         end
       elsif tag_name == 'input'
-        node['value'] = value.to_s
+        native['value'] = value.to_s
       elsif tag_name == "textarea"
-        node.content = value.to_s
+        native.content = value.to_s
       end
     end
 
-    def select(option)
-      if node['multiple'] != 'multiple'
-        node.xpath(".//option[@selected]").each { |node| node.remove_attribute("selected") }
+    def select_option
+      if select_node['multiple'] != 'multiple'
+        select_node.find(".//option[@selected]").each { |node| node.native.remove_attribute("selected") }
       end
-
-      if option_node = node.xpath(".//option[text()=#{Capybara::XPath.escape(option)}]").first ||
-                       node.xpath(".//option[contains(.,#{Capybara::XPath.escape(option)})]").first
-        option_node["selected"] = 'selected'
-      else
-        options = node.xpath(".//option").map { |o| "'#{o.text}'" }.join(', ')
-        raise Capybara::OptionNotFound, "No such option '#{option}' in this select box. Available options: #{options}"
-      end
+      native["selected"] = 'selected'
     end
 
-    def unselect(option)
-      if node['multiple'] != 'multiple'
-        raise Capybara::UnselectNotAllowed, "Cannot unselect option '#{option}' from single select box."
+    def unselect_option
+      if select_node['multiple'] != 'multiple'
+        raise Capybara::UnselectNotAllowed, "Cannot unselect option from single select box."
       end
-
-      if option_node = node.xpath(".//option[text()=#{Capybara::XPath.escape(option)}]").first ||
-                       node.xpath(".//option[contains(.,#{Capybara::XPath.escape(option)})]").first
-        option_node.remove_attribute('selected')
-      else
-        options = node.xpath(".//option").map { |o| "'#{o.text}'" }.join(', ')
-        raise Capybara::OptionNotFound, "No such option '#{option}' in this select box. Available options: #{options}"
-      end
+      native.remove_attribute('selected')
     end
 
     def click
@@ -82,29 +75,34 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
     end
 
     def tag_name
-      node.node_name
+      native.node_name
     end
 
     def visible?
-      node.xpath("./ancestor-or-self::*[contains(@style, 'display:none') or contains(@style, 'display: none')]").size == 0
+      native.xpath("./ancestor-or-self::*[contains(@style, 'display:none') or contains(@style, 'display: none')]").size == 0
     end
 
     def path
-      node.path
+      native.path
+    end
+
+    def find(locator)
+      native.xpath(locator).map { |n| self.class.new(driver, n) }
     end
 
   private
 
-    def all_unfiltered(locator)
-      node.xpath(locator).map { |n| self.class.new(driver, n) }
+    # a reference to the select node if this is an option node
+    def select_node
+      find('./ancestor::select').first
     end
 
     def type
-      node[:type]
+      native[:type]
     end
 
     def form
-      node.ancestors('form').first
+      native.ancestors('form').first
     end
   end
 
@@ -112,16 +110,16 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
     def params(button)
       params = {}
 
-      node.xpath(".//input[@type!='radio' and @type!='checkbox' and @type!='submit']").map do |input|
+      native.xpath(".//input[not(@type) or (@type!='radio' and @type!='checkbox' and @type!='submit' and @type!='image')]").map do |input|
         merge_param!(params, input['name'].to_s, input['value'].to_s)
       end
-      node.xpath(".//textarea").map do |textarea|
+      native.xpath(".//textarea").map do |textarea|
         merge_param!(params, textarea['name'].to_s, textarea.text.to_s)
       end
-      node.xpath(".//input[@type='radio' or @type='checkbox']").map do |input|
+      native.xpath(".//input[@type='radio' or @type='checkbox']").map do |input|
         merge_param!(params, input['name'].to_s, input['value'].to_s) if input['checked']
       end
-      node.xpath(".//select").map do |select|
+      native.xpath(".//select").map do |select|
         if select['multiple'] == 'multiple'
           options = select.xpath(".//option[@selected]")
           options.each do |option|
@@ -133,7 +131,7 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
           merge_param!(params, select['name'].to_s, (option['value'] || option.text).to_s) if option
         end
       end
-      node.xpath(".//input[@type='file']").map do |input|
+      native.xpath(".//input[@type='file']").map do |input|
         unless input['value'].to_s.empty?
           if multipart?
             content_type = MIME::Types.type_for(input['value'].to_s).first.to_s
@@ -149,7 +147,7 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
     end
 
     def submit(button)
-      driver.submit(method, node['action'].to_s, params(button))
+      driver.submit(method, native['action'].to_s, params(button))
     end
 
     def multipart?
@@ -183,6 +181,7 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
   alias_method :request, :last_request
 
   def initialize(app)
+    raise ArgumentError, "rack-test requires a rack application, but none was given" unless app
     @app = app
   end
 
@@ -191,7 +190,7 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
   end
 
   def process(method, path, attributes = {})
-    return if path.gsub(/^#{current_path}/, '') =~ /^#/
+    return if path.gsub(/^#{request_path}/, '') =~ /^#/
     send(method, path, attributes, env)
     follow_redirects!
   end
@@ -204,8 +203,12 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
     response.headers
   end
 
+  def status_code
+    response.status
+  end
+
   def submit(method, path, attributes)
-    path = current_path if not path or path.empty?
+    path = request_path if not path or path.empty?
     send(method, path, attributes, env)
     follow_redirects!
   end
@@ -213,21 +216,32 @@ class Capybara::Driver::RackTest < Capybara::Driver::Base
   def find(selector)
     html.xpath(selector).map { |node| Node.new(self, node) }
   end
-  
+
   def body
     @body ||= response.body
   end
-  
+
   def html
     @html ||= Nokogiri::HTML(body)
   end
   alias_method :source, :body
 
+  def cleanup!
+    clear_cookies
+  end
+
   def get(*args, &block); reset_cache; super; end
   def post(*args, &block); reset_cache; super; end
   def put(*args, &block); reset_cache; super; end
   def delete(*args, &block); reset_cache; super; end
-  
+
+  def follow_redirects!
+    5.times do
+      follow_redirect! if response.redirect?
+    end
+    raise Capybara::InfiniteRedirectError, "redirected more than 5 times, check for infinite redirects." if response.redirect?
+  end
+
 private
 
   def reset_cache
@@ -239,18 +253,8 @@ private
     Rack::MockSession.new(app, Capybara.default_host || "www.example.com")
   end
 
-  def current_path
+  def request_path
     request.path rescue ""
-  end
-
-  def follow_redirects!
-    Capybara::WaitUntil.timeout(4) do
-      redirect = response.redirect?
-      follow_redirect! if redirect
-      not redirect
-    end
-  rescue Capybara::TimeoutError
-    raise Capybara::InfiniteRedirectError, "infinite redirect detected!"
   end
 
   def env
@@ -261,11 +265,6 @@ private
       # no request yet
     end
     env
-  end
-
-  def reset_cache
-    @body = nil
-    @html = nil
   end
 
 end

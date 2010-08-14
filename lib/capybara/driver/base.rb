@@ -11,7 +11,31 @@ class Capybara::Driver::Base
     raise NotImplementedError
   end
 
+  def source
+    raise NotImplementedError
+  end
+
+  def body
+    raise NotImplementedError
+  end
+
+  def execute_script(script)
+    raise Capybara::NotSupportedByDriverError
+  end
+
   def evaluate_script(script)
+    raise Capybara::NotSupportedByDriverError
+  end
+
+  def response_headers
+    raise Capybara::NotSupportedByDriverError
+  end
+  
+  def status_code
+    raise Capybara::NotSupportedByDriverError
+  end
+
+  def within_frame(frame_id)
     raise Capybara::NotSupportedByDriverError
   end
 
@@ -19,19 +43,7 @@ class Capybara::Driver::Base
     false
   end
 
-  def wait_until *args
-  end
-
-  def response_headers
-    raise Capybara::NotSupportedByDriverError
-  end
-
-  def body
-    raise NotImplementedError
-  end
-
-  def source
-    raise NotImplementedError
+  def wait_until(*args)
   end
 
   def cleanup!

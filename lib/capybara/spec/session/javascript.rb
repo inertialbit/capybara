@@ -7,6 +7,26 @@ shared_examples_for "session with javascript support" do
     after do
       Capybara.default_wait_time = 0
     end
+
+    describe '#drag' do
+      it "should drag and drop an object" do
+        pending "drag/drop is currently broken under celerity/culerity" if @session.driver.is_a?(Capybara::Driver::Celerity)
+        @session.visit('/with_js')
+        @session.drag('//div[@id="drag"]', '//div[@id="drop"]')
+        @session.find('//div[contains(., "Dropped!")]').should_not be_nil
+      end
+    end
+
+    describe 'Node#drag_to' do
+      it "should drag and drop an object" do
+        pending "drag/drop is currently broken under celerity/culerity" if @session.driver.is_a?(Capybara::Driver::Celerity)
+        @session.visit('/with_js')
+        element = @session.find('//div[@id="drag"]')
+        target = @session.find('//div[@id="drop"]')
+        element.drag_to(target)
+        @session.find('//div[contains(., "Dropped!")]').should_not be_nil
+      end
+    end
     
     describe '#find' do
       it "should allow triggering of custom JS events" do
@@ -35,17 +55,25 @@ shared_examples_for "session with javascript support" do
     end
 
     describe "#evaluate_script" do
-      it "should return the evaluated script" do
+      it "should evaluate the given script and return whatever it produces" do
         @session.visit('/with_js')
         @session.evaluate_script("1+3").should == 4
       end
     end
 
-    describe '#locate' do
+    describe "#execute_script" do
+      it "should execute the given script and return nothing" do
+        @session.visit('/with_js')
+        @session.execute_script("$('#change').text('Funky Doodle')").should be_nil
+        @session.should have_css('#change', :text => 'Funky Doodle')
+      end
+    end
+
+    describe '#find' do
       it "should wait for asynchronous load" do
         @session.visit('/with_js')
         @session.click_link('Click me')
-        @session.locate("//a[contains(.,'Has been clicked')]")[:href].should == '#'
+        @session.find("//a[contains(.,'Has been clicked')]")[:href].should == '#'
       end
     end
 
@@ -72,7 +100,7 @@ shared_examples_for "session with javascript support" do
         @session.visit('/with_html')
         Proc.new do
           @session.wait_until(0.1) do
-            @session.find('//div[@id="nosuchthing"]')
+            @session.all('//div[@id="nosuchthing"]').first
           end
         end.should raise_error(::Capybara::TimeoutError)
       end
@@ -101,11 +129,11 @@ shared_examples_for "session with javascript support" do
       end
     end
 
-    describe '#click' do
+    describe '#click_link_or_button' do
       it "should wait for asynchronous load" do
         @session.visit('/with_js')
         @session.click_link('Click me')
-        @session.click('Has been clicked')
+        @session.click_link_or_button('Has been clicked')
       end
     end
 
